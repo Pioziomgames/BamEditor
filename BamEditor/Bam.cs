@@ -7,19 +7,19 @@ namespace BamEditor
 {
     public class Bam
     {
-        int FileSize { get; set; }
-        int EplCount { get; set; }
-        int HeaderSize { get; set; }
+        public int FileSize { get; set; }
+        public int EplCount { get; set; }
+        public int HeaderSize { get; set; }
 
-        int EplOffset { get; set; }
-        int ModelDataOffset { get; set; }
-        int AdditionalDataOffset { get; set; }
+        public int EplOffset { get; set; }
+        public int ModelDataOffset { get; set; }
+        public int AdditionalDataOffset { get; set; }
 
-        List<int> HeaderValues { get; set; }
+        public List<int> HeaderValues { get; set; }
 
-        List<MtnChunk> MtnChunks { get; set; }
-        List<EplChunk> EplChunks { get; set; }
-        MdlChunk MdlChunk { get; set; }
+        public List<MtnChunk> MtnChunks { get; set; }
+        public List<EplChunk> EplChunks { get; set; }
+        public MdlChunk MdlChunk { get; set; }
 
         public Bam(string Path)
         {
@@ -35,7 +35,7 @@ namespace BamEditor
         {
             if (new string(reader.ReadChars(4)) != "ATBC")
             {
-                throw new Exception("Not a proper bam file");
+                throw new Exception("Not a proper BAM model archive");
             }
 
             FileSize = reader.ReadInt32();
@@ -80,12 +80,8 @@ namespace BamEditor
 
             if (EplCount > 0)
             {
-                int EplCounter = 0;
-                while (true)
+                for (int i = 0; i < EplCount; i++)
                 {
-                    if (EplCounter == EplCount)
-                        break;
-
                     EplChunks.Add(new EplChunk(reader));
                 }
             }
@@ -100,11 +96,12 @@ namespace BamEditor
 
     public class EplChunk
     {
-        string Name { get; set; }
-        int Size { get; set; }
-        ushort valueCount { get; set; }
-        List<int> Values { get; set; }
-        byte[] EplData { get; set; }
+        public string Name { get; set; }
+        public int Size { get; set; }
+        public ushort valueCount { get; set; }
+        public List<int> Values { get; set; }
+        public List<int> EplValues { get; set; }
+        public byte[] EplData { get; set; }
 
         public EplChunk(string Path)
         {
@@ -120,13 +117,20 @@ namespace BamEditor
         {
             Name = new string(reader.ReadChars(8));
             Size = reader.ReadInt32();
+            reader.ReadBytes(4);
+
             valueCount = reader.ReadUInt16();
             valueCount = reader.ReadUInt16();
             Values = new List<int>();
+            EplValues = new List<int>();
             for (int i = 0; i < valueCount; i++)
                 Values.Add(reader.ReadInt32());
 
-            int EplSize = Size - 20 - valueCount * 4;
+            for (int i = 0; i < 4; i++)
+                EplValues.Add(reader.ReadInt32());
+            
+
+            int EplSize = Size - 36 - valueCount * 4;
 
             EplData = reader.ReadBytes(EplSize);
         }
@@ -135,14 +139,14 @@ namespace BamEditor
 
     public class MtnChunk
     {
-        string Name { get; set; }
-        int FakeSize { get; set; }
+        public string Name { get; set; }
+        public int FakeSize { get; set; }
         //Mgd
-        string MgdMagic { get; set; }
-        int MgdCount { get; set; }
-        int MgdFullSize { get; set; }
-        int MgdValueCount { get; set; }
-        List<int> MgdValues { get; set; }
+        public string MgdMagic { get; set; }
+        public int MgdCount { get; set; }
+        public int MgdFullSize { get; set; }
+        public int MgdValueCount { get; set; }
+        public List<int> MgdValues { get; set; }
         public MtnChunk(string Path)
         {
             using (BinaryReader reader = new BinaryReader(File.OpenRead(Path)))
@@ -183,9 +187,9 @@ namespace BamEditor
 
     public class MdlChunk
     {
-        string Name { get; set; }
-        int Size { get; set; }
-        byte[] ModelData { get; set; }
+        public string Name { get; set; }
+        public int Size { get; set; }
+        public byte[] ModelData { get; set; }
 
         public MdlChunk(string Path)
         {
