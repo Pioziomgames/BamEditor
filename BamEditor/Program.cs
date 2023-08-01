@@ -17,15 +17,14 @@ namespace BamEditor
 
         static void Main(string[] args)
         {
-            
             string InputFile = "";
 
             if (args.Length > 0)
                 InputFile = args[0];
             else
             { 
-                Console.WriteLine($"BamEditor v0.6.1\n" +
-                    $"Extracts BAM files found in Persona Q and som 3DS Etrian Odyssey games\n" +
+                Console.WriteLine($"BamEditor v0.7.0\n" +
+                    $"Extracts and Repacks BAM and BAM2 files found in PQ, PQ2, SMT4, SMT4A and Etrian Odyssey games\n" +
                     $"Usage:\n" +
                     $"       BamEditor.exe InputFile (optional)OutputFolder\n"+
                     $"       BamEditor.exe InputFolder (optional)OutputFile");
@@ -91,13 +90,21 @@ namespace BamEditor
                         using (var writer = new StreamWriter(path + $@"\Mtn\{zeros}{i}B.json"))
                             writer.Write(JsonConvert.SerializeObject(Mtn.MgdValuesB, Formatting.Indented));
                         
-                        
                     }
                 }
 
                 if (BAMFile.MdlChunk != null)
-                    File.WriteAllBytes(path + $@"\{Path.GetFileNameWithoutExtension(InputFile)}.cgfx", BAMFile.MdlChunk.ModelData);
+                {
+                    string EXT = "cgfx";
+                    if (BAMFile.MdlChunk.ModelData.Length > 3 && BAMFile.MdlChunk.ModelData[0] == 0x42)
+                        EXT = "bch";
+                    File.WriteAllBytes(path + $@"\{Path.GetFileNameWithoutExtension(InputFile)}." + EXT, BAMFile.MdlChunk.ModelData);
+                }
 
+                if (BAMFile.ABCH)
+                {
+                    File.Create(path + @"\ABCH");
+                }
 
                 Console.WriteLine("Bam File Extracted");
 
@@ -112,19 +119,23 @@ namespace BamEditor
                 Bam CreatedBam = new Bam();
 
                 string[] cgfxFiles = Directory.GetFiles(InputFile,"*.cgfx",SearchOption.TopDirectoryOnly);
+                string[] bchFiles = Directory.GetFiles(InputFile,"*.bch",SearchOption.TopDirectoryOnly);
 
-                if (cgfxFiles.Length > 1)
+                string mdlpath;
+                if (cgfxFiles.Length > 0)
                 {
-                    Console.WriteLine($"\nWARNING: More than one cgfx file\nEmbedding only: {Path.GetFileName(cgfxFiles[0])}");
+                    mdlpath = cgfxFiles[0];
                 }
-                else if (cgfxFiles.Length == 0)
+                else if (bchFiles.Length > 0)
                 {
-                    throw new Exception("No cgfx files found");
+                    mdlpath = bchFiles[0];
                 }
+                else
+                    throw new Exception("No cfgx or bch model files found");
 
-                byte[] cgfx = File.ReadAllBytes(cgfxFiles[0]);
-
-                CreatedBam.MdlChunk = new MdlChunk(cgfx);
+                Console.WriteLine($"Importing model: {mdlpath}...");
+                byte[] model = File.ReadAllBytes(mdlpath);
+                CreatedBam.MdlChunk = new MdlChunk(model);
 
                 List<EplChunk> EplList = new List<EplChunk>();
                 if (Directory.Exists(InputFile + "\\Epl"))
@@ -191,6 +202,10 @@ namespace BamEditor
                     CreatedBam.MtnChunks = new List<MtnChunk>();
                 }
 
+                if (File.Exists(InputFile + @"\ABCH"))
+                {
+                    CreatedBam.ABCH = true;
+                }
 
                 if (File.Exists(InputFile + "\\Header.json"))
                 {

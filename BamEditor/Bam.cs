@@ -15,28 +15,6 @@ namespace BamEditor
     
     public class Bam
     {
-        
-        public int FileSize 
-        { 
-            get 
-            {
-                int Size = 32;
-
-                Size += HeaderValues.Count * 4;
-
-                for (int i = 0; i < MtnChunks.Count; i++)
-                    Size += (int)MtnChunks[i].ChunkSize;
-
-                for (int i = 0; i < EplChunks.Count; i++)
-                    Size += (int)EplChunks[i].ChunkSize;
-
-                Size += (int)MdlChunk.ChunkSize + 112;
-
-                return Size;
-
-            } 
-        }
-        //public int EplCount { get; set; }
         public int EplCount { get { return EplChunks.Count; } }
         public int HeaderSize { get; set; }
 
@@ -49,9 +27,10 @@ namespace BamEditor
         public List<MtnChunk> MtnChunks { get; set; }
         public List<EplChunk> EplChunks { get; set; }
         public MdlChunk MdlChunk { get; set; }
+        public bool ABCH { get; set; }
         public Bam()
         {
-           
+            ABCH = false;
         }
         public Bam(string Path)
         {
@@ -65,7 +44,11 @@ namespace BamEditor
         public void Save(string Path)
         {
             using (BinaryWriter writer = new BinaryWriter(File.OpenWrite(Path)))
+            {
                 Write(writer);
+                writer.Flush();
+                writer.Close();
+            }
         }
         public void Save(BinaryWriter writer)
         {
@@ -73,10 +56,30 @@ namespace BamEditor
         }
         private void Write(BinaryWriter writer)
         {
-            writer.Write("ATBC".ToCharArray());
-            writer.Write(FileSize);
+            long FileStart = writer.BaseStream.Position;
+            if (ABCH)
+                writer.Write("ABCH".ToCharArray());
+            else
+                writer.Write("ATBC".ToCharArray());
+            writer.Write(0);
             writer.Write(EplChunks.Count);
             writer.Write(HeaderValues.Count);
+
+            if (HeaderValues.Count == 0 && EplChunks.Count == 0 && MtnChunks.Count == 0)
+            {
+                writer.Write(0);
+                writer.Write(128);
+                writer.Seek(104, SeekOrigin.Current);
+                MdlChunk.Save(writer);
+
+                writer.BaseStream.Position += GeneralStuff.Align(writer.BaseStream.Position - FileStart, 256) - (writer.BaseStream.Position - FileStart);
+                uint size = (uint)(writer.BaseStream.Position - FileStart);
+                writer.BaseStream.Position = FileStart + 4;
+                writer.Write(size);
+                writer.BaseStream.SetLength(FileStart+size);
+                return;
+            }
+
 
             long mtnSignOffset = (HeaderValues.Count * 4) + 32;
             long eplOffset = mtnSignOffset;
@@ -87,8 +90,16 @@ namespace BamEditor
             for (int i = 0; i < EplChunks.Count; i++)
                 mdlSignOffset += EplChunks[i].ChunkSize;
 
+            mdlSignOffset = GeneralStuff.Align(mdlSignOffset, 256);
+
+            if (MtnChunks.Count == 0)
+                mtnSignOffset = 0;
+            //if (EplChunks.Count == 0)
+            //    eplOffset = 0;
+
             writer.Write((int)eplOffset);
-            writer.Write((int)mdlSignOffset + 112);
+           
+            writer.Write((int)mdlSignOffset);
             writer.Write((int)mtnSignOffset);
 
             writer.Write(0); //reserved
@@ -105,24 +116,30 @@ namespace BamEditor
             }
                 
 
-            for (int i=0; i <EplChunks.Count;i++)
+            for (int i=0; i < EplChunks.Count;i++)
                 EplChunks[i].Save(writer);
 
-            for (int i = 0; i < 112; i++)
-                writer.Write((byte)0);
+            writer.BaseStream.Position = FileStart + mdlSignOffset;
 
             MdlChunk.Save(writer);
-                
 
+            writer.BaseStream.Position += GeneralStuff.Align(writer.BaseStream.Position - FileStart, 256) - (writer.BaseStream.Position - FileStart);
+
+            uint Filesize = (uint)(writer.BaseStream.Position-FileStart);
+            writer.BaseStream.Position = FileStart + 4;
+            writer.Write(Filesize);
+            writer.BaseStream.SetLength(FileStart+Filesize);
         }
 
         private void Read(BinaryReader reader)
         {
-            if (new string(reader.ReadChars(4)) != "ATBC")
-            {
+            string MAGIC = new string(reader.ReadChars(4));
+            if (MAGIC == "ATBC")
+                ABCH = false;
+            else if (MAGIC == "ABCH")
+                ABCH = true;
+            else
                 throw new Exception("Not a proper BAM model archive");
-            }
-
             int FileSize = reader.ReadInt32();
             int EplCount = reader.ReadInt32();
             HeaderSize = reader.ReadInt32();
@@ -137,31 +154,28 @@ namespace BamEditor
             for (int i = 0; i < HeaderSize; i++)
                 HeaderValues.Add(reader.ReadInt32());
 
-            reader.BaseStream.Seek(AdditionalDataOffset, SeekOrigin.Begin);
 
             MtnChunks = new List<MtnChunk>();
 
+            if (AdditionalDataOffset != 0)
+                reader.BaseStream.Seek(AdditionalDataOffset, SeekOrigin.Begin);
+
+
             while (true)
             {
-                if (reader.BaseStream.Position == EplOffset)
+                if (reader.BaseStream.Position == EplOffset || reader.ReadByte() == 0)
                 {
                     break;
-                }
-                if (reader.ReadByte() == 0)
-                {
-                    reader.BaseStream.Seek(EplOffset, SeekOrigin.Begin);
-                    break;
-                }
-                else 
-                {
-                    reader.BaseStream.Seek(-1, SeekOrigin.Current);
-                    MtnChunks.Add(new MtnChunk(reader));
                 }
 
+                reader.BaseStream.Seek(-1, SeekOrigin.Current);
+                MtnChunks.Add(new MtnChunk(reader));
             }
 
-
             EplChunks = new List<EplChunk>();
+
+            if (EplOffset != 0)
+                reader.BaseStream.Seek(EplOffset, SeekOrigin.Begin);
 
             if (EplCount > 0)
             {
@@ -184,7 +198,7 @@ namespace BamEditor
         public long ChunkSize { get { return GeneralStuff.Align(EplData.Length + 36, 16); } }
         //public string Name { get; set; }
         public int Size { get; set; }
-        public ushort valueCount { get; set; }
+        public ushort ValueCount { get; set; }
         public List<int> Values { get; set; }
         public int EplValue { get; set; }
         public byte[] EplData { get; set; }
@@ -214,16 +228,7 @@ namespace BamEditor
             ushort id2 = reader.ReadUInt16();
             Ids = new ushort[]{id1, id2 };
             
-            // TODO: figure this out so rebuilding works + finally start testing in game
-            int EplEndOffset = reader.ReadInt32(); // though that this was size of the epl but it broke some epls so it's not case
-
-
-            //valueCount = reader.ReadUInt16();
-            //valueCount = reader.ReadUInt16();
-            //Values = new List<int>();
-            
-            //for (int i = 0; i < valueCount; i++)
-            //    Values.Add(reader.ReadInt32());
+            int EplEndOffset = reader.ReadInt32();
 
             reader.ReadBytes(8);
 
@@ -232,7 +237,6 @@ namespace BamEditor
             int EplSize = Size - 36;
 
             EplData = reader.ReadBytes(EplSize);
-            //reader.ReadBytes(Size - EplEndOffset - 8); //endpadding
         }
 
         public void Save(BinaryWriter writer)
@@ -334,9 +338,10 @@ namespace BamEditor
             for (int i = 0;i < MgdValueCount;i++)
                 MgdValues.Add(reader.ReadInt32());
 
-            int padCount = 144 - 32 - (MgdValueCount * 4);
+            //(144 - 32) = 112
+            int padCount = 112 - (MgdValueCount * 4);
 
-            reader.ReadBytes(padCount); //pads
+            reader.ReadBytes(padCount); //padding
         }
 
         private void Write(BinaryWriter writer)
