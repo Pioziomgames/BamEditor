@@ -1,5 +1,2 @@
 # BamEditor
-BamEditor is a re/unpacker for bam model archives found in Persona Q games and some 3DS Etrian Odyssey games
-
-### Warning:
-This program does not support bam2 files found in Etrian Odyssey Nuxus (and maybe some other ones too)
+BamEditor is a re/unpacker for BAM and BAM2 model archives found in PQ, PQ2, SMT4, SMT4A and Etrian Odyssey games.
